@@ -21,27 +21,27 @@ const ObjectId = mongoose.Types.ObjectId;
 exports.viewDashboard =  async (req, res, next) => {
     try {
         let teachers = await Teacher.find({}, { __v: 0 }).populate(
-            "userid",
-            "name"
+          "userid",
+          "name"
         );
         teachers = teachers.map(teacher => teacher.toObject());
         let courses = await Course.find({}, { __v: 0, materialList: 0, _id: 0 }).populate({
-            path: "teacher",
-            select: "userid",
-            populate: {
-                path: "userid",
-                select: "name",
-            },
+          path: "teacher",
+          select: "userid",
+          populate: {
+            path: "userid",
+            select: "name",
+          },
         });
         courses = courses.map((course) => {
             let no_of_students = course.studentsList.length;
             let no_of_quizzes = course.quizList.length;
             let no_of_assignments = course.assignmentList.length;
-
+    
             course.studentsList = undefined;
             course.quizList = undefined;
             course.assignmentList = undefined;
-
+    
             return {
                 ...course.toObject(),
                 no_of_students: no_of_students,
@@ -58,14 +58,11 @@ exports.viewDashboard =  async (req, res, next) => {
             no_of_students: no_of_students
             };
         });
-
         res.json({ teachers: teachers, courses: courses, classes: classes });
-
-    } catch (e) {
-
+      } catch (e) {
         console.log(e);
         res.status(500).send("Could not get dashboard data");
-    }
+      }
 };
   
 //@Author: Beenish Shakeel [SP20-BCS-017]
@@ -76,47 +73,73 @@ exports.viewDashboard =  async (req, res, next) => {
     Returns: number of passed students
 */
 exports.viewGraph =  (req, res, next) => {
-    Result.aggregate([
-    {
-        $group: {
-            _id: {
-                class: "$class_id",
-                course: "$course_id"
-            },
-            totalStudents: {$sum: 1},
-            gpas: {
-                $push: "$obtained_gpa"
-            }
-        }
-    },
-    {
-        $group: {
-            _id: "$_id.class",
-            courses: {$push: {course: "$_id.course", totalStudents: "$totalStudents", gpas: "$gpas"}}
-        }
-    }
-    ])
-    .then(classesResults => {
-        classesResults = classesResults.map(classResult => {
-            let coursesResults = classResult.courses.map(course => {
-                let gpas = [...course.gpas]
-                delete course.gpas;
+    try {
+        let coursesRecords = await Course.find()
+            .populate({
+                path: "teacher",
+                select: "userid",
+                populate: {
+                    path: "userid",
+                    select: "name"
+                }
+            })
+            .populate("quizList.quizID")
+            .populate("assignmentList.assignmentID");
+
+        let courses = coursesRecords.map(courseRecord => {
+            console.log("Course: ", courseRecord.toObject());
+            let quizzes = courseRecord.quizList.map(quiz => {
+                let studentsPassed = 0;
+                let totalObtainedMarks = 0;
+                let avgMarks = 0;
+                if(quiz.quizID.attempted) {
+                    quiz.quizID.attempted.forEach(attempt => {
+                        studentsPassed += ((attempt.obtainedMarks / quiz.quizID.totalMarks) >= 0.33);
+                        totalObtainedMarks += attempt.obtainedMarks;
+                    });
+                    avgMarks = totalObtainedMarks / quiz.quizID.attempted.length;
+                }
+                quiz.quizID.attempted = undefined;
                 return {
-                    ...course,
-                    studentsPassed: gpas.filter(gpa => gpa >= 2).length
-                };
+                    ...quiz.quizID.toObject(),
+                    avgMarks: avgMarks, 
+                    studentsPassed: studentsPassed
+                }
+            });
+            let assignments = courseRecord.assignmentList.map(assignment => {
+                let studentsPassed = 0;
+                let totalObtainedMarks = 0;
+                let avgMarks = 0;
+                if(assignment.assignmentID.attempted){
+                    assignment.assignmentID.attempted.forEach(attempt => {
+                        studentsPassed += ((attempt.obtainedMarks / assignment.assignmentID.totalMarks) >= 0.33);
+                        totalObtainedMarks += attempt.obtainedMarks;
+                    });
+                    avgMarks = totalObtainedMarks / assignment.assignmentID.attempted.length;
+                }
+                assignment.assignmentID.attempted = undefined;
+                return {
+                    ...assignment.assignmentID.toObject(),
+                    avgMarks: avgMarks,
+                    studentsPassed: studentsPassed
+                }
             });
             return {
-                ...classResult,
-                courses: coursesResults
+                courseId: courseRecord.courseId,
+                courseName: courseRecord.courseName,
+                students: courseRecord.studentsList.length,
+                teacher: courseRecord.teacher.userid.name,
+                quizzes: quizzes,
+                assignments: assignments
             };
         });
-        res.json(classesResults);
-    })
-    .catch(error => {
-        console.log(error);
-        res.status(500).send("could not load graph data")
-    });
+
+        res.json(courses);
+    }
+    catch(err) {
+        res.status(500).send("Could not load process graph data");
+        console.error(err);
+    }
 };
 
 // @Author: Farasat Khan [SP20-BCS-025]
@@ -296,24 +319,13 @@ exports.updateParticularAssignment =  (req, res, next) => {
 
 
 //@Author: Hassan Raza [SP20-BCS-035]
-exports.updateParticularMaterials =  (req, res, next) => {
-    Course.findOneAndUpdate({
-        _id: req.params.mid
-    },
-        {
-            $set:
-            {
-                title: req.body.title,
-                file: req.body.file,
-                fileName: req.body.fileName,
-                fileExtension: req.body.fileExtension,
-                uploadDate: new Date()
-            }
-        },
-        function (error, results) {
-            if (error) {
-                return next(error);
-            }
-            res.json(results);
-        });
-};
+exports.updateParticularMaterials =  async function(req, res, next) {
+    try {
+        console.log("cfhgfh",req.params)
+        await Material.findByIdAndUpdate({materialID:req.params.id}, req.body);
+        res.status(200).json({ msg: "Product Updated" });
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ msg: err.message });
+    }
+}

@@ -27,6 +27,6 @@ router.put('/quiz/:qid', HeadController.updateParticularQuiz);
 router.put('/assigment/:id', HeadController.updateParticularAssignment);
 
 //@Author: Hassan Raza [SP20-BCS-035]
-router.put('/materials/:mid', HeadController.updateParticularMaterials);
+router.put('/update-material', HeadController.updateParticularMaterials);
 
 module.exports = router;
