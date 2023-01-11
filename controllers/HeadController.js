@@ -253,12 +253,56 @@ exports.viewMaterials =  (req, res, next) => {
 */
 exports.viewParticularClassResult =  (req, res, next) => {
     const class_id = req.params.id;
+    try {
+        const _class = await Class.findById(class_id).populate("studentsList.studentID");
+        let results = await Promise.all(_class.studentsList.map(async (studentObj) => {
+            let enrolledCourses = await Course.find({"studentsList.studentID": studentObj.studentID._id})
+            .populate("quizList.quizID")
+            .populate("assignmentList.assignmentID");
 
-    Result.find({class_id: class_id}).exec((error, data) => {
-        if (error) throw error;
+            let coursesResults = await Promise.all(enrolledCourses.map(async (course) => {
+                let quizzes = [];
+                let assignments = [];
 
-        res.status(200).send(data);
-    });
+                course.quizList(quizObj => {
+                    let attempt = quizObj.quizID.attempted.find(attempt => attempt.sid === studentObj.studentID);
+                    if(attempt) {
+                        quizzes.push({
+                            totalMarks: quizObj.quizID.totalMarks,
+                            obtainedMarks: attempt.obtainedMarks
+                        });
+                    }
+                });
+
+                course.assignmentList(assignmentObj => {
+                    let attempt = assignmentObj.assignmentID.attempted.find(attempt => attempt.sid === studentObj.studentID);
+                    if(attempt) {
+                        assignments.push({
+                            totalMarks: assignmentObj.assignmentID.totalMarks,
+                            obtainedMarks: attempt.obtainedMarks
+                        });
+                    }
+                });
+
+                return {
+                    course: course.courseName,
+                    quizzes: quizzes,
+                    assignments: assignments
+                };
+            }));
+
+            return {
+                student: studentObj.studentID.student_regNo,
+                results: coursesResults
+            };
+        }));
+
+        res.json(results);
+    }
+    catch(err) {
+        console.error(err);
+        res.status(500).send("Class results could not be retrieved");
+    }
 };
 
 
